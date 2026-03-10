@@ -42,7 +42,10 @@ Builds peer map  Builds peer map  Builds peer map
 4. Heartbeats flow every 30 seconds — silence means suspected, then dead
 5. Graceful shutdown sends a leave message before dying
 6. Every event is cryptographically timestamped on Hedera — forever
-
+7. Every announcement is signed with an ED25519 keypair generated fresh on startup
+8. Receiving nodes verify the signature before trusting any message
+9. Tampered or unsigned messages are silently dropped
+10. Every verified event is cryptographically timestamped on Hedera — forever
 ---
 
 ## Why Hedera HCS
@@ -56,6 +59,18 @@ Builds peer map  Builds peer map  Builds peer map
 | Cryptographic proof | No | Yes |
 
 ---
+
+
+## Security
+
+Every node generates a fresh ED25519 keypair on startup. Every message published to HCS is signed with that key. Receiving nodes verify the signature before adding any peer to their map.
+
+- No valid signature → message dropped silently
+- Tampered payload → signature mismatch → dropped
+- Rogue node → unsigned messages → ignored by all legitimate nodes
+
+No central certificate authority. No PKI infrastructure. Just math.
+
 
 ## Architecture
 
@@ -106,6 +121,7 @@ Demo
   ID       : e4047862
   Address  : 10.197.184.229:8080
   Topic    : 0.0.8148188
+  KeyPrint : 5fbf794dd98ec828
   Network  : Hedera Testnet
 
   [15:42:43] Subscribing to network topic...
