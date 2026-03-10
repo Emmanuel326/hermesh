@@ -1,17 +1,23 @@
 APP=hermesh
 VERSION=0.1.0
 GOEXPERIMENT=greenteagc
+GOIMPORTS=$(shell go env GOPATH)/bin/goimports
 
-.PHONY: run build clean build-all
+.PHONY: run build clean build-all fmt tidy lint
 
-run:
-	-
-	-go run ./...
+# Formats code and organizes imports
+fmt:
+	@echo "Formatting..."
+	@$(GOIMPORTS) -w .
+	@go fmt ./...
 
-build:
+run: fmt
+	go run ./...
+
+build: fmt
 	GOEXPERIMENT=$(GOEXPERIMENT) go build -ldflags="-s -w -X main.Version=$(VERSION)" -o bin/$(APP) ./...
 
-build-all:
+build-all: fmt
 	mkdir -p bin
 	GOEXPERIMENT=$(GOEXPERIMENT) GOOS=linux   GOARCH=amd64  go build -ldflags="-s -w" -o bin/$(APP)-linux-amd64 ./...
 	GOEXPERIMENT=$(GOEXPERIMENT) GOOS=linux   GOARCH=arm64  go build -ldflags="-s -w" -o bin/$(APP)-linux-arm64 ./...
