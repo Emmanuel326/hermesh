@@ -33,7 +33,7 @@ func (d *Discoverer) Start() error {
 		Subscribe(d.client.Inner(), func(msg hiero.TopicMessage) {
 			var announcement announce.Message
 			if err := json.Unmarshal(msg.Contents, &announcement); err != nil {
-				fmt.Println("❌ Failed to parse message:", err)
+				// skip legacy or malformed messages
 				return
 			}
 			d.handler(&announcement)

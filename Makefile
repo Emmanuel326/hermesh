@@ -5,7 +5,8 @@ GOEXPERIMENT=greenteagc
 .PHONY: run build clean build-all
 
 run:
-	go run ./...
+	-
+	-go run ./...
 
 build:
 	GOEXPERIMENT=$(GOEXPERIMENT) go build -ldflags="-s -w -X main.Version=$(VERSION)" -o bin/$(APP) ./...
