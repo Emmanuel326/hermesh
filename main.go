@@ -10,8 +10,9 @@ import (
 	"github.com/Emmanuel326/hermesh/announce"
 	"github.com/Emmanuel326/hermesh/cli"
 	"github.com/Emmanuel326/hermesh/config"
-	hederaclient "github.com/Emmanuel326/hermesh/hedera"
 	"github.com/Emmanuel326/hermesh/discover"
+	hederaclient "github.com/Emmanuel326/hermesh/hedera"
+	"github.com/Emmanuel326/hermesh/identity"
 	"github.com/Emmanuel326/hermesh/node"
 	"github.com/Emmanuel326/hermesh/peer"
 )
@@ -32,6 +33,14 @@ func main() {
 	}
 	defer client.Close()
 
+	// 2b. Generate node identity
+	id, err := identity.New()
+	if err != nil {
+		fmt.Println("❌ Identity error:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("  KeyPrint : %s\n", id.FingerPrint())
+
 	// 3. Create this node's identity
 	self, err := node.New(cfg.NodeName, cfg.NodePort)
 	if err != nil {
@@ -41,7 +50,7 @@ func main() {
 
 	// 4. Wire up modules
 	store := peer.NewStore()
-	announcer := announce.New(client)
+	announcer := announce.New(client, id)
 	discoverer := discover.New(client, store.Handle)
 	terminal := cli.New(store)
 
