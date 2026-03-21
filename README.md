@@ -137,7 +137,7 @@ Demo
   Total: 1 peers (1 alive)
 Verify every event live on HashScan — public, immutable, tamper-proof.
 Roadmap
-[ ] Node identity signing — cryptographic proof of node authenticity
+[x] Node identity signing — cryptographic proof of node authenticity
 [ ] Multi-topic sharding — horizontal scaling across HCS topics
 [ ] REST API — query peer state programmatically
 [ ] TUI dashboard — real-time network visualizer

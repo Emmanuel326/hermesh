@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+        "encoding/json"
 	"os"
 	"text/tabwriter"
 	"time"
@@ -93,4 +94,25 @@ func humanize(t time.Time) string {
 	default:
 		return fmt.Sprintf("%dh ago", int(diff.Hours()))
 	}
+}
+
+func (c *CLI) Query(service string, statusFilter string) {
+peers := c.store.List()
+result := make([]*node.Node, 0)
+
+for _, n := range peers {
+if service != "" && n.Name != service {
+continue
+}
+if statusFilter != "" && string(n.Status) != statusFilter {
+continue
+}
+result = append(result, n)
+}
+
+out, _ := json.Marshal(map[string]any{
+"peers": result,
+"total": len(result),
+})
+fmt.Println(string(out))
 }

@@ -1,117 +1,138 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
+"flag"
+"fmt"
+"os"
+"os/signal"
+"syscall"
+"time"
 
-	"github.com/Emmanuel326/hermesh/announce"
-	"github.com/Emmanuel326/hermesh/cli"
-	"github.com/Emmanuel326/hermesh/config"
-	"github.com/Emmanuel326/hermesh/discover"
-	hederaclient "github.com/Emmanuel326/hermesh/hedera"
-	"github.com/Emmanuel326/hermesh/identity"
-	"github.com/Emmanuel326/hermesh/node"
-	"github.com/Emmanuel326/hermesh/peer"
+"github.com/Emmanuel326/hermesh/announce"
+"github.com/Emmanuel326/hermesh/api"
+"github.com/Emmanuel326/hermesh/cli"
+"github.com/Emmanuel326/hermesh/config"
+"github.com/Emmanuel326/hermesh/discover"
+hederaclient "github.com/Emmanuel326/hermesh/hedera"
+"github.com/Emmanuel326/hermesh/identity"
+"github.com/Emmanuel326/hermesh/node"
+"github.com/Emmanuel326/hermesh/peer"
 )
 
 func main() {
-	// 1. Load config
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Println("❌ Config error:", err)
-		os.Exit(1)
-	}
+apiPort := flag.String("api-port", "9000", "HTTP API port")
+pruneAfter := flag.Duration("prune", 10*time.Minute, "Prune dead nodes older than this duration")
+flag.Parse()
 
-	// 2. Connect to Hedera
-	client, err := hederaclient.New(cfg)
-	if err != nil {
-		fmt.Println("❌ Hedera client error:", err)
-		os.Exit(1)
-	}
-	defer client.Close()
+// 1. Load config
+cfg, err := config.Load()
+if err != nil {
+fmt.Println("❌ Config error:", err)
+os.Exit(1)
+}
 
-	// 2b. Generate node identity
-	id, err := identity.New()
-	if err != nil {
-		fmt.Println("❌ Identity error:", err)
-		os.Exit(1)
-	}
-	fmt.Printf("  KeyPrint : %s\n", id.FingerPrint())
+// 2. Connect to Hedera
+client, err := hederaclient.New(cfg)
+if err != nil {
+fmt.Println("❌ Hedera client error:", err)
+os.Exit(1)
+}
+defer client.Close()
 
-	// 3. Create this node's identity
-	self, err := node.New(cfg.NodeName, cfg.NodePort)
-	if err != nil {
-		fmt.Println("❌ Node error:", err)
-		os.Exit(1)
-	}
+// 2b. Generate node identity
+id, err := identity.New()
+if err != nil {
+fmt.Println("❌ Identity error:", err)
+os.Exit(1)
+}
 
-	// 4. Wire up modules
-	store := peer.NewStore()
-	announcer := announce.New(client, id)
-	discoverer := discover.New(client, store.Handle)
-	terminal := cli.New(store)
+// 3. Create this node's identity
+self, err := node.New(cfg.NodeName, cfg.NodePort)
+if err != nil {
+fmt.Println("❌ Node error:", err)
+os.Exit(1)
+}
 
-	// 5. Print banner and status
-	terminal.PrintBanner()
-	terminal.PrintStatus(self, cfg.TopicID)
+// 4. Wire up modules
+store := peer.NewStore()
+announcer := announce.New(client, id)
+discoverer := discover.New(client, store.Handle)
+terminal := cli.New(store)
+apiServer := api.New(store, *apiPort)
 
-	// 6. Start discovery — replay full history first
-	terminal.PrintEvent("Subscribing to network topic...")
-	if err := discoverer.Start(); err != nil {
-		fmt.Println("❌ Discovery error:", err)
-		os.Exit(1)
-	}
-	terminal.PrintEvent("Listening for peers...")
+// 5. Print banner and status
+terminal.PrintBanner()
+terminal.PrintStatus(self, cfg.TopicID)
+fmt.Printf("  KeyPrint : %s\n\n", id.FingerPrint())
 
-	// 7. Announce this node to the network
-	time.Sleep(2 * time.Second) // let history replay first
-	terminal.PrintEvent("Announcing node to network...")
-	if err := announcer.Announce(self); err != nil {
-		fmt.Println("❌ Announce error:", err)
-		os.Exit(1)
-	}
-	terminal.PrintEvent(fmt.Sprintf("Node announced: %s", self))
+// 6. Start API server in background
+go func() {
+if err := apiServer.Start(); err != nil {
+fmt.Println("❌ API server error:", err)
+}
+}()
 
-	// 8. Heartbeat every 30 seconds
-	heartbeatTicker := time.NewTicker(30 * time.Second)
-	defer heartbeatTicker.Stop()
+// 7. Start discovery
+terminal.PrintEvent("Subscribing to network topic...")
+if err := discoverer.Start(); err != nil {
+fmt.Println("❌ Discovery error:", err)
+os.Exit(1)
+}
+terminal.PrintEvent("Listening for peers...")
 
-	// 9. Garbage collect every 30 seconds
-	gcTicker := time.NewTicker(30 * time.Second)
-	defer gcTicker.Stop()
+// 8. Announce this node
+time.Sleep(2 * time.Second)
+terminal.PrintEvent("Announcing node to network...")
+if err := announcer.Announce(self); err != nil {
+fmt.Println("❌ Announce error:", err)
+os.Exit(1)
+}
+terminal.PrintEvent(fmt.Sprintf("Node announced: %s", self))
 
-	// 10. Print peers every 10 seconds
-	peersTicker := time.NewTicker(10 * time.Second)
-	defer peersTicker.Stop()
+// 9. Tickers
+heartbeatTicker := time.NewTicker(30 * time.Second)
+defer heartbeatTicker.Stop()
 
-	// 11. Handle shutdown gracefully
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+gcTicker := time.NewTicker(30 * time.Second)
+defer gcTicker.Stop()
 
-	// 12. Main loop
-	for {
-		select {
-		case <-heartbeatTicker.C:
-			if err := announcer.Heartbeat(self); err != nil {
-				terminal.PrintEvent(fmt.Sprintf("❌ Heartbeat failed: %s", err))
-			} else {
-				terminal.PrintEvent("💓 Heartbeat sent")
-			}
+pruneTicker := time.NewTicker(1 * time.Minute)
+defer pruneTicker.Stop()
 
-		case <-gcTicker.C:
-			store.GarbageCollect()
+peersTicker := time.NewTicker(10 * time.Second)
+defer peersTicker.Stop()
 
-		case <-peersTicker.C:
-			terminal.PrintPeers()
+// 10. Graceful shutdown
+quit := make(chan os.Signal, 1)
+signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-		case <-quit:
-			terminal.PrintEvent("Shutting down gracefully...")
-			announcer.Leave(self)
-			terminal.PrintEvent("👋 Left the network. Goodbye.")
-			os.Exit(0)
-		}
-	}
+// 11. Main loop
+for {
+select {
+case <-heartbeatTicker.C:
+if err := announcer.Heartbeat(self); err != nil {
+terminal.PrintEvent(fmt.Sprintf("❌ Heartbeat failed: %s", err))
+} else {
+terminal.PrintEvent("💓 Heartbeat sent")
+}
+
+case <-gcTicker.C:
+store.GarbageCollect()
+
+case <-pruneTicker.C:
+n := store.Prune(*pruneAfter)
+if n > 0 {
+terminal.PrintEvent(fmt.Sprintf("🧹 Pruned %d dead nodes", n))
+}
+
+case <-peersTicker.C:
+terminal.PrintPeers()
+
+case <-quit:
+terminal.PrintEvent("Shutting down gracefully...")
+announcer.Leave(self)
+terminal.PrintEvent("👋 Left the network. Goodbye.")
+os.Exit(0)
+}
+}
 }

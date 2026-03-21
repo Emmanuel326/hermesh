@@ -99,3 +99,17 @@ func (s *Store) Alive() []*node.Node {
 	}
 	return nodes
 }
+
+func (s *Store) Prune(maxAge time.Duration) int {
+s.mu.Lock()
+defer s.mu.Unlock()
+
+pruned := 0
+for id, n := range s.peers {
+if n.Status == node.StatusDead && time.Since(n.LastSeen) > maxAge {
+delete(s.peers, id)
+pruned++
+}
+}
+return pruned
+}
